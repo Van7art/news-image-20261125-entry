@@ -1,35 +1,56 @@
 #!/usr/bin/env python3
-"""news-image-20261125 entry (variant A): copy the pre-rendered front page
-to the harness output directory.
+"""Copy the entry image to the output directory.
 
-Harness contract: writes exactly one file, /output/entry.png
-(or $MAKEFUN_OUTPUT_DIR/entry.png), deterministically, with no network
-access and no other side effects.
+The image for this entry (entry.png, the 25 November 2026 world-news
+broadsheet) already sits next to this script in the repository. This
+program's only job is to place a byte-identical copy of it at
+<MAKEFUN_OUTPUT_DIR>/entry.png and confirm the copy matches.
+
+Standard library only; no network, no randomness, no clock.
 """
+
+import hashlib
 import os
 import shutil
+import sys
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+SOURCE_NAME = "entry.png"
+DEFAULT_OUTPUT_DIR = "output"
+
+
+def sha256_of(path):
+    """Return the hex SHA-256 digest of the file at *path*."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main():
-    # Create the output directory explicitly: the harness mounts a fresh
-    # output path that may not exist yet, so makedirs is required before
-    # the copy can succeed.
-    os.makedirs(OUT, exist_ok=True)
-    src = os.path.join(HERE, "entry.png")
-    dst = os.path.join(OUT, "entry.png")
-    if not os.path.isfile(src):
-        raise SystemExit(f"missing source image: {src}")
-    shutil.copyfile(src, dst)
-    # Integrity check: the copy must be byte-identical in size to the source.
-    if os.path.getsize(dst) != os.path.getsize(src):
-        raise SystemExit(
-            f"copy incomplete: {dst} size {os.path.getsize(dst)} "
-            f"!= source {os.path.getsize(src)}"
-        )
+    here = Path(__file__).resolve().parent
+    source = here / SOURCE_NAME
+    if not source.is_file():
+        print(f"error: {SOURCE_NAME} not found next to main.py", file=sys.stderr)
+        return 1
+
+    output_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR") or DEFAULT_OUTPUT_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    destination = output_dir / SOURCE_NAME
+
+    shutil.copyfile(source, destination)
+
+    source_hash = sha256_of(source)
+    copied_hash = sha256_of(destination)
+    if source_hash != copied_hash:
+        print("error: copied file does not match the source", file=sys.stderr)
+        return 1
+
+    size = destination.stat().st_size
+    print(f"wrote {destination} ({size} bytes, sha256 {copied_hash})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
